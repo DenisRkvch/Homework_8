@@ -34,7 +34,7 @@ jobs:
 
       - name: Download and prepare Kafka
         run: |
-          Invoke-WebRequest -Uri "https://archive.apache.org/dist/kafka/$env:KAFKA_VERSION/kafka_2.13-$env:KAFKA_VERSION.tgz" -OutFile kafka.tgz
+          Invoke-WebRequest -Url "https://archive.apache.org/dist/kafka/$env:KAFKA_VERSION/kafka_2.13-$env:KAFKA_VERSION.tgz" -OutFile kafka.tgz
           tar -xzf kafka.tgz
           cd $env:KAFKA_DIR
           $KAFKA_CLUSTER_ID = .\bin\windows\kafka-storage.bat random-uuid
