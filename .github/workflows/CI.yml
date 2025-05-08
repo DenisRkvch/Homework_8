@@ -39,27 +39,27 @@ jobs:
   linux-build:
     name: Ubuntu x64
     runs-on: ubuntu-latest
-    services:
-      zookeeper:
-        image: bitnami/zookeeper:3.8
-        ports: ["2181:2181"]
-        env:
-          ALLOW_ANONYMOUS_LOGIN: "yes"
-      kafka:
-        image: bitnami/kafka:3.4
-        ports: ["9092:9092"]
-        env:
-          KAFKA_CFG_ZOOKEEPER_CONNECT: zookeeper:2181
-          ALLOW_PLAINTEXT_LISTENER: "yes"
-          KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"  # Отключаем автосоздание
-          KAFKA_CREATE_TOPICS: "testtopic:1:1"  # Создаём топик при старте
     steps:
       - uses: actions/checkout@v4
 
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake g++ make librdkafka-dev
+          sudo apt-get install -y cmake g++ make librdkafka-dev openjdk-17-jdk
+
+      - name: Download and prepare Kafka
+        run: |
+          wget https://archive.apache.org/dist/kafka/3.6.1/kafka_2.13-3.6.1.tgz
+          tar -xzf kafka_2.13-3.6.1.tgz
+          cd kafka_2.13-3.6.1
+          KAFKA_CLUSTER_ID=$(bin/kafka-storage.sh random-uuid)
+          bin/kafka-storage.sh format -t $KAFKA_CLUSTER_ID -c config/kraft/server.properties
+          sed -i 's/^process.roles=.*/process.roles=broker,controller/' config/kraft/server.properties
+          sed -i 's/^node.id=.*/node.id=1/' config/kraft/server.properties
+          sed -i 's/^controller.quorum.voters=.*/controller.quorum.voters=1@localhost:9093/' config/kraft/server.properties
+          sed -i 's/^listeners=.*/listeners=PLAINTEXT:\/\/:9092,CONTROLLER:\/\/:9093/' config/kraft/server.properties
+          sed -i 's/^advertised.listeners=.*/advertised.listeners=PLAINTEXT:\/\/localhost:9092/' config/kraft/server.properties
+          sed -i 's/^log.dirs=.*/log.dirs=\/tmp\/kraft-combined-logs/' config/kraft/server.properties
 
       - name: Configure CMake
         run: cmake -B build -S .
@@ -67,18 +67,24 @@ jobs:
       - name: Build
         run: cmake --build build --parallel 4
 
-      - name: Wait for Kafka
+      - name: Start Kafka Server
         run: |
-          for i in {1..10}; do
-            nc -zv localhost 9092 && exit 0
-            sleep 5
-          done
-          exit 1
-      - name: Verify Kafka topic
+          cd kafka_2.13-3.6.1
+          nohup bin/kafka-server-start.sh config/kraft/server.properties > /tmp/kafka.log 2>&1 &
+          echo $! > /tmp/kafka.pid
+          sleep 15
+
+      - name: Create test topic
         run: |
-          docker run --network host --rm bitnami/kafka:3.4 \
-          kafka-topics.sh --list --bootstrap-server localhost:9092
+          cd kafka_2.13-3.6.1
+          bin/kafka-topics.sh --create --topic testtopic --bootstrap-server localhost:9092 --partitions 1 --replication-factor 1
 
       - name: Run tests
         working-directory: build
         run: ctest -VV --test-dir Test --build-config Release
+
+      - name: Stop Kafka Server
+        if: always()
+        run: |
+          kill $(cat /tmp/kafka.pid) || true
+          sleep 5
