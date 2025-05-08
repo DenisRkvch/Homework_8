@@ -19,7 +19,7 @@ endif()
 
 add_library(ServerEndpoint STATIC
     "KafkaConsumer.cpp" "KafkaConsumer.h"
-    "ImessageHandler.h"
+    "IMessageHandler.h"
     "GameAgentMessageHandler.cpp" "GameAgentMessageHandler.h"
     "InterpretCommand.cpp" "InterpretCommand.h"
 )
