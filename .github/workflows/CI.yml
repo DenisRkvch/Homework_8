@@ -6,7 +6,7 @@ env:
   VCPKG_DIR: ./vcpkg
   VCPKG_TRIPLET: x64-windows
   KAFKA_VERSION: 3.6.1
-  KAFKA_DIR: kafka_2.13-${{ env.KAFKA_VERSION }}
+  KAFKA_DIR: kafka_2.13-3.6.1
 
 jobs:
   windows-build:
