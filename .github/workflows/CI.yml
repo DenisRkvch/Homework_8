@@ -33,19 +33,27 @@ jobs:
         run: vcpkg install librdkafka --triplet $env:VCPKG_TRIPLET
 
       - name: Download and prepare Kafka
+        shell: pwsh
         run: |
-          Invoke-WebRequest -Url "https://archive.apache.org/dist/kafka/$env:KAFKA_VERSION/kafka_2.13-$env:KAFKA_VERSION.tgz" -OutFile kafka.tgz
-          tar -xzf kafka.tgz
-          cd $env:KAFKA_DIR
-          $KAFKA_CLUSTER_ID = .\bin\windows\kafka-storage.bat random-uuid
-          .\bin\windows\kafka-storage.bat format -t $KAFKA_CLUSTER_ID -c .\config\kraft\server.properties
-          (Get-Content .\config\kraft\server.properties) `
-            -replace '^process.roles=.*', 'process.roles=broker,controller' `
-            -replace '^node.id=.*', 'node.id=1' `
-            -replace '^controller.quorum.voters=.*', 'controller.quorum.voters=1@localhost:9093' `
-            -replace '^listeners=.*', 'listeners=PLAINTEXT://:9092,CONTROLLER://:9093' `
-            -replace '^advertised.listeners=.*', 'advertised.listeners=PLAINTEXT://localhost:9092' `
-            -replace '^log.dirs=.*', 'log.dirs=C:/kafka-logs' | Set-Content .\config\kraft\server.properties
+          $kafka_version = $env:KAFKA_VERSION
+          $url = "https://archive.apache.org/dist/kafka/$kafka_version/kafka_2.13-$kafka_version.tgz"
+          Invoke-WebRequest -Uri $url -OutFile kafka.tgz
+          
+          7z x kafka.tgz -o. -y
+          Rename-Item "kafka_2.13-$kafka_version" "kafka"
+          
+          cd kafka
+          $cluster_id = .\bin\windows\kafka-storage.bat random-uuid
+          .\bin\windows\kafka-storage.bat format -t $cluster_id -c .\config\kraft\server.properties
+          
+          $config = Get-Content .\config\kraft\server.properties -Raw
+          $config = $config -replace '(?m)^process.roles=.*', 'process.roles=broker,controller'
+          $config = $config -replace '(?m)^node.id=.*', 'node.id=1'
+          $config = $config -replace '(?m)^controller.quorum.voters=.*', 'controller.quorum.voters=1@localhost:9093'
+          $config = $config -replace '(?m)^listeners=.*', 'listeners=PLAINTEXT://:9092,CONTROLLER://:9093'
+          $config = $config -replace '(?m)^advertised.listeners=.*', 'advertised.listeners=PLAINTEXT://localhost:9092'
+          $config = $config -replace '(?m)^log.dirs=.*', 'log.dirs=.\logs'
+          $config | Set-Content .\config\kraft\server.properties
 
       - name: Configure CMake
         run: |
