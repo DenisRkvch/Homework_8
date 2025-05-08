@@ -74,6 +74,14 @@ jobs:
             sleep 5
           done
           exit 1
+      - name: Create Kafka topic manually
+        run: |
+          docker run --network host --rm bitnami/kafka:3.4 \
+          kafka-topics.sh --create \
+          --bootstrap-server localhost:9092 \
+          --topic testtopic \
+          --partitions 1 \
+          --replication-factor 1
 
       - name: Run tests
         working-directory: build
