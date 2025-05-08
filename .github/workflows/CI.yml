@@ -35,39 +35,55 @@ jobs:
       - name: Download and prepare Kafka
         shell: pwsh
         run: |
-          $kafka_version = "3.6.1"
-          $kafka_dir = "kafka"
-    
-          # Скачивание архива
-          $url = "https://archive.apache.org/dist/kafka/$kafka_version/kafka_2.13-$kafka_version.tgz"
-          Invoke-WebRequest -Uri $url -OutFile kafka.tgz
+            $kafka_version = "3.6.1"
+            $archive_name = "kafka_2.13-$kafka_version.tgz"
+            $extracted_dir = "kafka_2.13-$kafka_version"
+            $target_dir = "kafka"
 
-          # Создание временной директории
-          New-Item -ItemType Directory -Path .\kafka_temp | Out-Null
+            Write-Host "Tar version:"
+            tar --version
 
-          # Распаковка архива
-          tar -xzf kafka.tgz -C kafka_temp
-          Get-ChildItem kafka_temp | Rename-Item -NewName $kafka_dir
+            # Скачивание архива
+            Invoke-WebRequest "https://archive.apache.org/dist/kafka/$kafka_version/$archive_name" -OutFile kafka.tgz
+
+            # Создание директории для распаковки
+            New-Item -ItemType Directory -Name $target_dir -Force | Out-Null
+
+            # Распаковка архива
+            tar -xzf kafka.tgz -C $target_dir --strip-components 1
+
+            # После распаковки
+            Write-Host "Directory contents:"
+            Get-ChildItem -Path $target_dir -Recurse | Format-Table -AutoSize
+
+            # Проверка успешности распаковки
+            if (-Not (Test-Path "$target_dir\bin\windows\kafka-server-start.bat")) {
+                Write-Error "Kafka files not extracted properly!"
+                Get-ChildItem -Path $target_dir -Recurse | Format-List
+                exit 1
+            }
+
+            # Настройка конфигурации
+            Set-Location $target_dir
     
-          # Переход в директорию Kafka
-          Set-Location $kafka_dir
-     
-          # Генерация кластера
-          $cluster_id = .\bin\windows\kafka-storage.bat random-uuid
-          .\bin\windows\kafka-storage.bat format -t $cluster_id -c .\config\kraft\server.properties
+            $config_path = "config\kraft\server.properties"
+            $config = Get-Content $config_path -Raw
     
-          # Модификация конфигурации
-          $config_path = ".\config\kraft\server.properties"
-          (Get-Content $config_path) `
-          -replace '^process.roles=.*', 'process.roles=broker,controller' `
-          -replace '^node.id=.*', 'node.id=1' `
-          -replace '^controller.quorum.voters=.*', 'controller.quorum.voters=1@localhost:9093' `
-          -replace '^listeners=.*', 'listeners=PLAINTEXT://:9092,CONTROLLER://:9093' `
-          -replace '^advertised.listeners=.*', 'advertised.listeners=PLAINTEXT://localhost:9092' `
-          -replace '^log.dirs=.*', 'log.dirs=.\logs' | Set-Content $config_path
+            # Модификация конфигурации
+            $config = $config -replace '(?m)^process.roles=.*', 'process.roles=broker,controller'
+            $config = $config -replace '(?m)^node.id=.*', 'node.id=1'
+            $config = $config -replace '(?m)^controller.quorum.voters=.*', 'controller.quorum.voters=1@localhost:9093'
+            $config = $config -replace '(?m)^listeners=.*', 'listeners=PLAINTEXT://:9092,CONTROLLER://:9093'
+            $config = $config -replace '(?m)^advertised.listeners=.*', 'advertised.listeners=PLAINTEXT://localhost:9092'
+            $config = $config -replace '(?m)^log.dirs=.*', 'log.dirs=logs'
     
-          # Возврат в корневую директорию
-          Set-Location ..
+            Set-Content $config_path $config
+
+            # Инициализация хранилища
+            $cluster_id = .\bin\windows\kafka-storage.bat random-uuid
+            .\bin\windows\kafka-storage.bat format -t $cluster_id -c $config_path
+
+            Set-Location ..
 
       - name: Configure CMake
         run: |
