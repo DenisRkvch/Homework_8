@@ -36,7 +36,6 @@ jobs:
         working-directory: build
         run: ctest -VV --test-dir Test --build-config Release
 
-
   linux-build:
     name: Ubuntu x64
     runs-on: ubuntu-latest
@@ -52,7 +51,8 @@ jobs:
         env:
           KAFKA_CFG_ZOOKEEPER_CONNECT: zookeeper:2181
           ALLOW_PLAINTEXT_LISTENER: "yes"
-          KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+          KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"  # Отключаем автосоздание
+          KAFKA_CREATE_TOPICS: "testtopic:1:1"  # Создаём топик при старте
     steps:
       - uses: actions/checkout@v4
 
@@ -74,14 +74,10 @@ jobs:
             sleep 5
           done
           exit 1
-      - name: Create Kafka topic manually
+      - name: Verify Kafka topic
         run: |
           docker run --network host --rm bitnami/kafka:3.4 \
-          kafka-topics.sh --create \
-          --bootstrap-server localhost:9092 \
-          --topic testtopic \
-          --partitions 1 \
-          --replication-factor 1
+          kafka-topics.sh --list --bootstrap-server localhost:9092
 
       - name: Run tests
         working-directory: build
