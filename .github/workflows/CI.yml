@@ -5,6 +5,8 @@ on: [push, pull_request]
 env:
   VCPKG_DIR: ./vcpkg  # Путь относительно рабочей директории
   VCPKG_TRIPLET: x64-windows
+  KAFKA_VERSION: 3.6.1
+  KAFKA_DIR: kafka_2.13-${{ env.KAFKA_VERSION }}
 
 jobs:
   windows-build:
@@ -15,6 +17,12 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
+      - name: Install Java
+        uses: actions/setup-java@v3
+        with:
+          java-version: '17'
+          distribution: 'microsoft'
+
       - name: Install vcpkg
         run: |
           git clone https://github.com/microsoft/vcpkg $env:VCPKG_DIR
@@ -24,6 +32,21 @@ jobs:
       - name: Install dependencies
         run: vcpkg install librdkafka --triplet $env:VCPKG_TRIPLET
 
+      - name: Download and prepare Kafka
+        run: |
+          Invoke-WebRequest -Uri "https://archive.apache.org/dist/kafka/$env:KAFKA_VERSION/kafka_2.13-$env:KAFKA_VERSION.tgz" -OutFile kafka.tgz
+          tar -xzf kafka.tgz
+          cd $env:KAFKA_DIR
+          $KAFKA_CLUSTER_ID = .\bin\windows\kafka-storage.bat random-uuid
+          .\bin\windows\kafka-storage.bat format -t $KAFKA_CLUSTER_ID -c .\config\kraft\server.properties
+          (Get-Content .\config\kraft\server.properties) `
+            -replace '^process.roles=.*', 'process.roles=broker,controller' `
+            -replace '^node.id=.*', 'node.id=1' `
+            -replace '^controller.quorum.voters=.*', 'controller.quorum.voters=1@localhost:9093' `
+            -replace '^listeners=.*', 'listeners=PLAINTEXT://:9092,CONTROLLER://:9093' `
+            -replace '^advertised.listeners=.*', 'advertised.listeners=PLAINTEXT://localhost:9092' `
+            -replace '^log.dirs=.*', 'log.dirs=C:/kafka-logs' | Set-Content .\config\kraft\server.properties
+
       - name: Configure CMake
         run: |
           cmake -B build -S . -A x64 `
@@ -32,9 +55,26 @@ jobs:
       - name: Build the project
         run: cmake --build build --config Release
 
+      - name: Start Kafka Server
+        run: |
+          cd $env:KAFKA_DIR
+          Start-Process -NoNewWindow -FilePath ".\bin\windows\kafka-server-start.bat" -ArgumentList ".\config\kraft\server.properties" -PassThru | Select-Object -ExpandProperty Id | Out-File -FilePath kafka.pid
+          Start-Sleep -Seconds 25
+
+      - name: Create test topic
+        run: |
+          cd $env:KAFKA_DIR
+          .\bin\windows\kafka-topics.bat --create --topic testtopic --bootstrap-server localhost:9092 --partitions 1 --replication-factor 1
+
+
       - name: Run tests
         working-directory: build
         run: ctest -VV --test-dir Test --build-config Release
+
+      - name: Stop Kafka Server
+        if: always()
+        run: |
+          Get-Content $env:KAFKA_DIR\kafka.pid | ForEach-Object { Stop-Process -Id $_ -Force }
 
   linux-build:
     name: Ubuntu x64
