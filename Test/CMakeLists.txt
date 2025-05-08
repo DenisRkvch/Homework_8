@@ -31,7 +31,7 @@ target_link_libraries(My_tests PUBLIC
 
 add_test(
 	NAME My_tests
-	COMMAND My_tests
+	COMMAND My_tests 
 )
 
 
