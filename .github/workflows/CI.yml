@@ -33,9 +33,9 @@ jobs:
         run: cmake --build build --config Release
 
       - name: Run tests
-        run: |
-          cd build
-          ctest -C Release --output-on-failure
+        working-directory: build
+        run: ctest -VV --test-dir build/Test --build-config Release
+
 
   linux-build:
     name: Ubuntu x64
@@ -55,6 +55,5 @@ jobs:
         run: cmake --build build --parallel 4
 
       - name: Run tests
-        run: |
-          cd build
-          ctest --output-on-failure
+        working-directory: build
+        run: ctest -VV --test-dir build/Test --build-config Release
