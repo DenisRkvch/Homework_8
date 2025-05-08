@@ -2,89 +2,8 @@ name: C++ CI
 
 on: [push, pull_request]
 
-env:
-  VCPKG_DIR: ./vcpkg
-  VCPKG_TRIPLET: x64-windows
-  KAFKA_VERSION: 3.6.1
-  KAFKA_DIR: kafka_2.13-3.6.1
 
 jobs:
-  windows-build:
-    name: Windows x64
-    runs-on: windows-latest
-
-    steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
-
-      - name: Install Java
-        uses: actions/setup-java@v3
-        with:
-          java-version: '17'
-          distribution: 'microsoft'
-
-     # - name: Install vcpkg
-     #   run: |
-     #     git clone https://github.com/microsoft/vcpkg $env:VCPKG_DIR
-     #     & "$env:VCPKG_DIR\bootstrap-vcpkg.bat"
-     #     echo "$env:VCPKG_DIR" >> $env:GITHUB_PATH
-
-     # - name: Install dependencies
-     #   run: vcpkg install librdkafka --triplet $env:VCPKG_TRIPLET
-
-      - name: Download and prepare Kafka
-        shell: pwsh
-        run: |
-          $version = "3.6.1"
-          $url = "https://archive.apache.org/dist/kafka/$version/kafka_2.13-$version.tgz"
-          
-          # Скачивание и распаковка
-          Invoke-WebRequest $url -OutFile k.tgz
-          tar -xzf k.tgz -o kafka --strip-components 1
-          
-          # Настройка конфига
-          $cfg = "kafka\config\kraft\server.properties"
-          (Get-Content $cfg) -replace 'log.dirs=.*', 'log.dirs=logs' | Set-Content $cfg
-          
-          # Инициализация хранилища
-          & "kafka\bin\windows\kafka-storage.bat" format -t ($(& "kafka\bin\windows\kafka-storage.bat" random-uuid)) -c $cfg
-
-      - name: Configure CMake
-        run: |
-          cmake -B build -S . -A x64 `
-            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_DIR/scripts/buildsystems/vcpkg.cmake"
-
-      - name: Build the project
-        run: cmake --build build --config Release
-
-      - name: Start Kafka Server
-        shell: pwsh
-        run: |
-            # Создаем сокращенный символьный путь
-            $shortPath = New-Item -ItemType Junction -Name k -Value .\kafka -Force
-    
-            # Запускаем Kafka через сокращенный путь
-            $process = Start-Process -PassThru -NoNewWindow -FilePath "$shortPath\bin\windows\kafka-server-start.bat" -ArgumentList ".\config\kraft\server.properties"
-            $process.Id | Out-File -FilePath kafka.pid
-    
-            # Ждем инициализации
-            Start-Sleep -Seconds 25
-
-      - name: Create test topic
-        run: |
-          cd $env:KAFKA_DIR
-          .\bin\windows\kafka-topics.bat --create --topic testtopic --bootstrap-server localhost:9092 --partitions 1 --replication-factor 1
-
-
-      - name: Run tests
-        working-directory: build
-        run: ctest -VV --test-dir Test --build-config Release
-
-      - name: Stop Kafka Server
-        if: always()
-        run: |
-          Get-Content $env:KAFKA_DIR\kafka.pid | ForEach-Object { Stop-Process -Id $_ -Force }
-
   linux-build:
     name: Ubuntu x64
     runs-on: ubuntu-latest
