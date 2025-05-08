@@ -35,55 +35,19 @@ jobs:
       - name: Download and prepare Kafka
         shell: pwsh
         run: |
-            $kafka_version = "3.6.1"
-            $archive_name = "kafka_2.13-$kafka_version.tgz"
-            $extracted_dir = "kafka_2.13-$kafka_version"
-            $target_dir = "kafka"
-
-            Write-Host "Tar version:"
-            tar --version
-
-            # Скачивание архива
-            Invoke-WebRequest "https://archive.apache.org/dist/kafka/$kafka_version/$archive_name" -OutFile kafka.tgz
-
-            # Создание директории для распаковки
-            New-Item -ItemType Directory -Name $target_dir -Force | Out-Null
-
-            # Распаковка архива
-            tar -xzf kafka.tgz -C $target_dir --strip-components 1
-
-            # После распаковки
-            Write-Host "Directory contents:"
-            Get-ChildItem -Path $target_dir -Recurse | Format-Table -AutoSize
-
-            # Проверка успешности распаковки
-            if (-Not (Test-Path "$target_dir\bin\windows\kafka-server-start.bat")) {
-                Write-Error "Kafka files not extracted properly!"
-                Get-ChildItem -Path $target_dir -Recurse | Format-List
-                exit 1
-            }
-
-            # Настройка конфигурации
-            Set-Location $target_dir
-    
-            $config_path = "config\kraft\server.properties"
-            $config = Get-Content $config_path -Raw
-    
-            # Модификация конфигурации
-            $config = $config -replace '(?m)^process.roles=.*', 'process.roles=broker,controller'
-            $config = $config -replace '(?m)^node.id=.*', 'node.id=1'
-            $config = $config -replace '(?m)^controller.quorum.voters=.*', 'controller.quorum.voters=1@localhost:9093'
-            $config = $config -replace '(?m)^listeners=.*', 'listeners=PLAINTEXT://:9092,CONTROLLER://:9093'
-            $config = $config -replace '(?m)^advertised.listeners=.*', 'advertised.listeners=PLAINTEXT://localhost:9092'
-            $config = $config -replace '(?m)^log.dirs=.*', 'log.dirs=logs'
-    
-            Set-Content $config_path $config
-
-            # Инициализация хранилища
-            $cluster_id = .\bin\windows\kafka-storage.bat random-uuid
-            .\bin\windows\kafka-storage.bat format -t $cluster_id -c $config_path
-
-            Set-Location ..
+          $version = "3.6.1"
+          $url = "https://archive.apache.org/dist/kafka/$version/kafka_2.13-$version.tgz"
+          
+          # Скачивание и распаковка
+          Invoke-WebRequest $url -OutFile k.tgz
+          tar -xzf k.tgz -o kafka --strip-components 1
+          
+          # Настройка конфига
+          $cfg = "kafka\config\kraft\server.properties"
+          (Get-Content $cfg) -replace 'log.dirs=.*', 'log.dirs=logs' | Set-Content $cfg
+          
+          # Инициализация хранилища
+          & "kafka\bin\windows\kafka-storage.bat" format -t ($(& "kafka\bin\windows\kafka-storage.bat" random-uuid)) -c $cfg
 
       - name: Configure CMake
         run: |
@@ -94,10 +58,17 @@ jobs:
         run: cmake --build build --config Release
 
       - name: Start Kafka Server
+        shell: pwsh
         run: |
-          cd $env:KAFKA_DIR
-          Start-Process -NoNewWindow -FilePath ".\bin\windows\kafka-server-start.bat" -ArgumentList ".\config\kraft\server.properties" -PassThru | Select-Object -ExpandProperty Id | Out-File -FilePath kafka.pid
-          Start-Sleep -Seconds 25
+            # Создаем сокращенный символьный путь
+            $shortPath = New-Item -ItemType Junction -Name k -Value .\kafka -Force
+    
+            # Запускаем Kafka через сокращенный путь
+            $process = Start-Process -PassThru -NoNewWindow -FilePath "$shortPath\bin\windows\kafka-server-start.bat" -ArgumentList ".\config\kraft\server.properties"
+            $process.Id | Out-File -FilePath kafka.pid
+    
+            # Ждем инициализации
+            Start-Sleep -Seconds 25
 
       - name: Create test topic
         run: |
