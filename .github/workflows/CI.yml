@@ -34,7 +34,7 @@ jobs:
 
       - name: Run tests
         working-directory: build
-        run: ctest -VV --test-dir build/Test --build-config Release
+        run: ctest -VV --test-dir Test --build-config Release
 
 
   linux-build:
@@ -56,4 +56,4 @@ jobs:
 
       - name: Run tests
         working-directory: build
-        run: ctest -VV --test-dir build/Test --build-config Release
+        run: ctest -VV --test-dir Test --build-config Release
